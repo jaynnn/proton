@@ -31,7 +31,7 @@ import traceback
 import multiprocessing
 import xml.etree.ElementTree as ElementTree
 import xml.dom.minidom as minidom
-import sxl
+import openpyxl
 
 def fillvalue(parent, name, value, isschema):
   if isinstance(parent, list):
@@ -42,7 +42,7 @@ def fillvalue(parent, name, value, isschema):
     parent[name] = value
     
 def getindex(infos, name):
-  return next((i for i, j in enumerate(infos) if j == name), -1)
+  return next((i for i, j in enumerate(infos) if j.value == name), -1)
   
 def getcellvalue(value):
   return str(value) if value is not None else ''
@@ -52,6 +52,7 @@ def getscemainfo(typename, description):
     typename = typename.typename
   return [typename, description] if description else [typename]
         
+# 获取表定义的名字,在excel表下方的脚注。如 英雄|Hero -> Hero
 def getexportmark(sheetName):
   p = re.search('\|[' + string.whitespace + ']*(_|[a-zA-Z]\w+)', sheetName)
   return p.group(1) if p else False
@@ -113,7 +114,7 @@ def savexml(record):
   with codecs.open(record.exportfile, 'w', 'utf-8') as f:
     dom.writexml(f, '', '  ', '\n', 'utf-8')
       
-  print('save %s from %s in %s' % (record.exportfile, record.sheet.name, record.path))
+  print('save %s from %s in %s' % (record.exportfile, record.sheetname, record.path))
   
 def newline(count):
   return '\n' + '  ' * count
@@ -170,7 +171,7 @@ class BindType:
     return self.typename == other
     
 class Record:
-  def __init__(self, path, sheet, exportfile, root, item, obj, exportmark):
+  def __init__(self, path, sheet, exportfile, root, item, obj, exportmark, sheetname):
     self.path = path 
     self.sheet = sheet 
     self.exportfile = exportfile 
@@ -178,6 +179,7 @@ class Record:
     self.item = item
     self.setobj(obj)
     self.exportmark = exportmark
+    self.sheetname = sheetname
 
   def setobj(self, obj):    
     self.schema = obj[0] if obj else None
@@ -299,14 +301,14 @@ class Exporter:
 
   def export(self, path):
     self.path = path
-    data = sxl.Workbook(self.path)
+    wb = openpyxl.load_workbook(self.path)
     cout = None
 
-    for sheetname in [i for i in data.sheets if type(i) is str]:
+    for sheetname in wb.get_sheet_names():
       self.sheetname = sheetname
       exportmark = getexportmark(sheetname)
       if exportmark:
-        sheet = data.sheets[sheetname]
+        sheet = wb.get_sheet_by_name(sheetname)
         coutmark = sheetname.endswith('<<')
         configtitleinfo = self.getconfigsheetfinfo(sheet)
         if not configtitleinfo:
@@ -324,6 +326,7 @@ class Exporter:
             if item:
               exportobj = self.exportitemsheet(sheet)
             else:
+              # 全局字段导出(横向类型定义的表)
               exportobj = self.exportconfigsheet(sheet, configtitleinfo)
           
             if coutmark:
@@ -338,7 +341,7 @@ class Exporter:
                 if obj:
                   cout[1][item + 's'] = obj
                   
-            self.records.append(Record(self.path, sheet, exportfile, root, item, exportobj, exportmark))
+            self.records.append(Record(self.path, sheet, exportfile, root, item, exportobj, exportmark, sheetname))
           else:
             print('%s is not changed' % (self.path))
             break
@@ -357,9 +360,8 @@ class Exporter:
               cout[1].update(obj)
               
     return self.saves()
-
   def getconfigsheetfinfo(self, sheet):
-    titles = sheet.head(1)[0]
+    titles = sheet[1]
     
     nameindex = getindex(titles, self.configsheettitles[0])
     valueindex = getindex(titles, self.configsheettitles[1])
@@ -373,7 +375,7 @@ class Exporter:
       return None
       
   def exportitemsheet(self, sheet):
-    rows = iter(sheet.rows)
+    rows = sheet.iter_rows(None, None, None, None, True)
     descriptions = next(rows)
     types = next(rows)
     names = next(rows)
@@ -451,7 +453,7 @@ class Exporter:
     return (schemaobj, list_)
         
   def exportconfigsheet(self, sheet, titleindexs):
-    rows = iter(sheet.rows)
+    rows = sheet.iter_rows(None, None, None, None, True)
     next(rows)
   
     nameindex = titleindexs[0]
@@ -520,7 +522,7 @@ class Exporter:
       jsonstr = json.dumps(record.obj, ensure_ascii = False, indent = 2)
       with codecs.open(record.exportfile, 'w', 'utf-8') as f:
         f.write(jsonstr)
-      print('save %s from %s in %s' % (record.exportfile, record.sheet.name, record.path))
+      print('save %s from %s in %s' % (record.exportfile, record.sheetname, record.path))
         
     elif self.context.format == 'xml':
       if record.item:
@@ -532,7 +534,7 @@ class Exporter:
       with codecs.open(record.exportfile, 'w', 'utf-8') as f:
         f.write('return ')
         f.write(luastr)
-      print('save %s from %s in %s' % (record.exportfile, record.sheet.name, record.path))
+      print('save %s from %s in %s' % (record.exportfile, record.sheetname, record.path))
       
     elif self.context.format == 'ycl':
       g = toycl(record.obj)
@@ -540,7 +542,7 @@ class Exporter:
       yclstr = "".join(g)
       with codecs.open(record.exportfile, 'w', 'utf-8') as f:
         f.write(yclstr)
-      print('save %s from %s in %s' % (record.exportfile, record.sheet.name, record.path))
+      print('save %s from %s in %s' % (record.exportfile, record.sheetname, record.path))
   
   def checksheetname(self, path, sheetname, root):
     r = next((r for r in self.records if r.root == root), False)
@@ -560,6 +562,8 @@ def exportfiles(context):
   paths = []
   for path in re.split(r'[,;|]+', context.path.strip()):
     if path:
+      if context.prefix:
+        path = context.prefix.join(path)
       if not os.path.isfile(path):
         raise ValueError('%s is not exists' % path)
       elif path in paths:
@@ -633,6 +637,7 @@ if __name__ == '__main__':
 
   context = Context()
   context.path = None
+  context.prefix = None
   context.folder = '.'
   context.format = 'json'
   context.sign = None
@@ -644,6 +649,8 @@ if __name__ == '__main__':
   for op, v in opst:
     if op == '-p':
       context.path = v
+    elif op == '-pr':
+      context.prefix = v
     elif op == '-f':
       context.folder = v
     elif op == '-e':
