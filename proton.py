@@ -648,11 +648,9 @@ if __name__ == '__main__':
   context.multiprocessescount = None
 
   for op, v in opst:
-    print("----", op, v)
     if op == '-p':
       context.path = v
     elif op == '-x':
-      print("========", v)
       context.prefix = v
     elif op == '-f':
       context.folder = v
