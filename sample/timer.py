@@ -3,9 +3,9 @@ import time
 import subprocess
 
 def job():
-    subprocess.run(["python", "__export.py"])
+    subprocess.run(["tools/py37/py37.exe", "__export.py"])
 
-schedule.every().second.do(job)
+schedule.every(30).seconds.do(job)
 
 while True:
     schedule.run_pending()
