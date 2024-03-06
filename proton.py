@@ -563,7 +563,7 @@ def exportfiles(context):
   for path in re.split(r'[,;|]+', context.path.strip()):
     if path:
       if context.prefix:
-        path = context.prefix.join(path)
+        path = context.prefix + path
       if not os.path.isfile(path):
         raise ValueError('%s is not exists' % path)
       elif path in paths:
@@ -621,6 +621,7 @@ class Context:
   -e      : format, json or xml or lua or ycl
 
   Options
+  -x      : path prefix, default './'
   -s      ：sign, controls whether the column is exported, defalut all export
   -t      : suffix, export file suffix
   -r      : the separator of object field, default is ; you can use it to change
@@ -633,7 +634,7 @@ class Context:
 
 if __name__ == '__main__':
   print('argv:' , sys.argv)
-  opst, args = getopt.getopt(sys.argv[1:], 'p:f:e:s:t:r:m:c:h')
+  opst, args = getopt.getopt(sys.argv[1:], 'p:f:e:x:s:t:r:m:c:h')
 
   context = Context()
   context.path = None
@@ -647,9 +648,11 @@ if __name__ == '__main__':
   context.multiprocessescount = None
 
   for op, v in opst:
+    print("----", op, v)
     if op == '-p':
       context.path = v
-    elif op == '-pr':
+    elif op == '-x':
+      print("========", v)
       context.prefix = v
     elif op == '-f':
       context.folder = v
